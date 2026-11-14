@@ -12,6 +12,8 @@ const I = {
   x: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   flame: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2c1 4 6 6 6 12a6 6 0 0 1-12 0c0-3 2-5 3-6 0 2 1 3 2 3 0-4-1-6 1-9z"/></svg>',
   search: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14 M16 16l5 5"/></svg>',
+  left: '<svg width="12" height="20" viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2L2 10l8 8"/></svg>',
+  right: '<svg width="12" height="20" viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 2l8 8-8 8"/></svg>',
   check: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>'
 };
 const glyph = (d) => '<svg viewBox="0 0 24 24" fill="none" stroke="#3A3350" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + d + '"/></svg>';
@@ -141,6 +143,7 @@ const GENDER_POOL = W.filter((w) => (w.g === 'm' || w.g === 'f') && /^(le |la |l
 
 // ---------- navigation ----------
 let stack = [{ v: 'home' }];
+let swipedAt = 0;
 let tab = 'home';
 const cur = () => stack[stack.length - 1];
 function go(view) { stack.push(view); render(true); }
@@ -248,7 +251,7 @@ VIEWS.deck = (st) => {
   return '<div class="screen noTabs">' + nav(esc(st.title) + ' · ' + (st.i + 1) + ' / ' + st.keys.length, markBtn(k)) +
     '<div class="progressTop"><i style="width:' + (st.i / st.keys.length * 100) + '%"></i></div>' +
     '<div class="flash" data-a="flip" role="button" aria-label="Перевернуть карточку">' + frontSide + (showSay ? sayBtn(sayText(k)) : '') + backSide + '</div>' +
-    '<div class="hint">' + (st.flip ? '&nbsp;' : 'Нажмите на карточку, чтобы увидеть ' + (st.rev ? 'слово' : 'перевод')) + '</div>' +
+    '<div class="pager"><button class="pg" data-a="prev" aria-label="Предыдущая карточка"' + (st.i === 0 ? ' disabled' : '') + '>' + I.left + '</button>' +'<div class="hint" style="margin:0;flex:1">' + (st.flip ? 'Листайте стрелками или свайпом' : 'Нажмите на карточку — ' + (st.rev ? 'слово' : 'перевод') + '<br>Листайте стрелками или свайпом') + '</div>' +'<button class="pg" data-a="next" aria-label="Следующая карточка"' + (st.i >= st.keys.length - 1 ? ' disabled' : '') + '>' + I.right + '</button></div>' +
     '<div class="btns2"><button class="btn btnBad" data-a="ans" data-ok="0">' + (st.review ? 'Не помню' : 'Не знаю') + '</button><button class="btn btnGood" data-a="ans" data-ok="1">' + (st.review ? 'Помню' : 'Знаю') + '</button></div></div>';
 };
 
@@ -424,6 +427,21 @@ function render(top) {
   const root = ['home', 'review', 'saved', 'search'].includes(st.v);
   app.innerHTML = VIEWS[st.v](st) + (root ? tabbar() : '');
   if (top) window.scrollTo(0, 0);
+  if (st.v === 'deck') {
+    const card = app.querySelector('.flash');
+    if (card) {
+      let x0 = null, y0 = 0;
+      card.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+      card.addEventListener('touchend', (e) => {
+        if (x0 == null) return; const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0; x0 = null;
+        if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+          swipedAt = Date.now();
+          if (dx < 0 && st.i < st.keys.length - 1) { st.i++; st.flip = false; render(false); }
+          else if (dx > 0 && st.i > 0) { st.i--; st.flip = false; render(false); }
+        }
+      });
+    }
+  }
   if (st.v === 'search') {
     const inp = document.getElementById('q');
     inp.addEventListener('input', () => { st.q = inp.value; const box = document.getElementById('sres'); const tmp = document.createElement('div'); tmp.innerHTML = VIEWS.search(st); box.innerHTML = tmp.querySelector('#sres').innerHTML; });
@@ -443,7 +461,9 @@ app.addEventListener('click', (e) => {
     case 'open': go({ v: el.dataset.v, i: el.dataset.i != null ? +el.dataset.i : undefined }); break;
     case 'setv': st[el.dataset.key] = isNaN(+el.dataset.val) ? el.dataset.val : +el.dataset.val; if (el.dataset.key === 'mode') st.cur = null; render(false); break;
     case 'deck': startDeck(el.dataset.src, { topic: el.dataset.topic, rev: el.dataset.rev === '1', title: el.dataset.topic ? (TOPICS.find((t) => t[0] === el.dataset.topic) || [0, 0, el.dataset.topic])[2] : '' }); break;
-    case 'flip': st.flip = !st.flip; if (st.flip && st.rev) say(sayText(st.keys[st.i])); render(false); break;
+    case 'prev': if (st.i > 0) { st.i--; st.flip = false; render(false); } break;
+    case 'next': if (st.i < st.keys.length - 1) { st.i++; st.flip = false; render(false); } break;
+    case 'flip': if (Date.now() - swipedAt < 400) break; st.flip = !st.flip; if (st.flip && st.rev) say(sayText(st.keys[st.i])); render(false); break;
     case 'ans': answer(el.dataset.ok === '1'); break;
     case 'vflip': if (!st.cur.show) { st.cur.show = true; say(st.cur.f.full); render(false); } break;
     case 'vans': st.n++; if (el.dataset.ok === '1') st.ok++; bump(); st.cur = newVerbQ(st.i); render(false); break;
